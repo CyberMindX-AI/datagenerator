@@ -17,9 +17,7 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
 
   try {
     const { object } = await generateObject({
-      model: google("gemini-1.5-pro", {
-        apiKey: apiKey,
-      }),
+      model: google("gemini-2.5-flash"),
       schema: z.object({
         fields: z.array(z.string()).describe("Array of field names for the data"),
         data: z.array(z.string()).describe(`Array of ${rowCount} JSON strings representing data objects`),
@@ -158,9 +156,7 @@ IMPORTANT: Return the data as an array of JSON strings, where each string repres
 
   try {
     const { object } = await generateObject({
-      model: google("gemini-1.5-pro", {
-        apiKey: apiKey,
-      }),
+      model: google("gemini-2.5-flash"),
       schema: z.object({
         fields: z.array(z.string()).describe("Array of field names for the data"),
         data: z.array(z.string()).describe(`Array of ${rowCount} JSON strings representing data objects`),

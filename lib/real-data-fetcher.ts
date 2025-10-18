@@ -15,9 +15,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
   if (apiKey) {
     try {
       const { object } = await generateObject({
-        model: google("gemini-1.5-pro", {
-          apiKey: apiKey,
-        }),
+        model: google("gemini-2.5-flash"),
         schema: z.object({
           category: z
             .enum(["finance", "weather", "news", "crypto", "sports", "government", "education", "health", "environment", "demographics", "transportation", "economics", "ml_datasets", "ai_training", "computer_vision", "nlp_datasets", "general"])
