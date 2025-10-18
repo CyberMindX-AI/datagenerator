@@ -1,4 +1,5 @@
 import { generateObject } from "ai"
+import { google } from "@ai-sdk/google"
 import { z } from "zod"
 
 interface RealDataResult {
@@ -7,19 +8,35 @@ interface RealDataResult {
 }
 
 export async function fetchRealData(prompt: string, rows: number): Promise<RealDataResult> {
-  const { object: intent } = await generateObject({
-    model: "google/gemini-2.0-flash-exp",
-    schema: z.object({
-      category: z
-        .enum(["finance", "weather", "news", "crypto", "sports", "government", "education", "health", "environment", "demographics", "transportation", "economics", "ml_datasets", "ai_training", "computer_vision", "nlp_datasets", "general"])
-        .describe("Category of data requested"),
-      specificRequest: z.string().describe("Specific details about what data to fetch"),
-      keywords: z.array(z.string()).describe("Keywords to use for fetching data"),
-    }),
-    prompt: `Analyze this data request and determine what category it falls into and what specific data should be fetched: "${prompt}"`,
-  })
+  let intent: { category: string; specificRequest: string; keywords: string[] }
 
-  console.log("[v0] Data intent:", intent)
+  // Try to use Gemini AI for smart categorization if API key is available
+  const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
+  if (apiKey) {
+    try {
+      const { object } = await generateObject({
+        model: google("gemini-1.5-pro", {
+          apiKey: apiKey,
+        }),
+        schema: z.object({
+          category: z
+            .enum(["finance", "weather", "news", "crypto", "sports", "government", "education", "health", "environment", "demographics", "transportation", "economics", "ml_datasets", "ai_training", "computer_vision", "nlp_datasets", "general"])
+            .describe("Category of data requested"),
+          specificRequest: z.string().describe("Specific details about what data to fetch"),
+          keywords: z.array(z.string()).describe("Keywords to use for fetching data"),
+        }),
+        prompt: `Analyze this data request and determine what category it falls into and what specific data should be fetched: "${prompt}"`,
+      })
+      intent = object
+      console.log("[v0] AI-analyzed data intent:", intent)
+    } catch (error) {
+      console.warn("[v0] Gemini AI analysis failed, using fallback categorization:", error)
+      intent = fallbackCategorization(prompt)
+    }
+  } else {
+    console.log("[v0] No Gemini API key found, using fallback categorization")
+    intent = fallbackCategorization(prompt)
+  }
 
   try {
     switch (intent.category) {
@@ -61,6 +78,60 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
     console.error("[v0] Error fetching real data:", error)
     throw new Error("Failed to fetch real data from sources")
   }
+}
+
+// Fallback categorization when Gemini AI is not available
+function fallbackCategorization(prompt: string): { category: string; specificRequest: string; keywords: string[] } {
+  const lowerPrompt = prompt.toLowerCase()
+  
+  // Simple keyword-based categorization
+  if (lowerPrompt.includes('stock') || lowerPrompt.includes('finance') || lowerPrompt.includes('market') || lowerPrompt.includes('crypto') || lowerPrompt.includes('bitcoin')) {
+    return {
+      category: lowerPrompt.includes('crypto') || lowerPrompt.includes('bitcoin') ? 'crypto' : 'finance',
+      specificRequest: prompt,
+      keywords: extractKeywords(prompt, ['stock', 'finance', 'market', 'crypto', 'bitcoin', 'price', 'trading'])
+    }
+  }
+  
+  if (lowerPrompt.includes('weather') || lowerPrompt.includes('temperature') || lowerPrompt.includes('climate')) {
+    return {
+      category: 'weather',
+      specificRequest: prompt,
+      keywords: extractKeywords(prompt, ['weather', 'temperature', 'climate', 'rain', 'wind', 'humidity'])
+    }
+  }
+  
+  if (lowerPrompt.includes('news') || lowerPrompt.includes('article') || lowerPrompt.includes('headline')) {
+    return {
+      category: 'news',
+      specificRequest: prompt,
+      keywords: extractKeywords(prompt, ['news', 'article', 'headline', 'breaking', 'story'])
+    }
+  }
+  
+  if (lowerPrompt.includes('sport') || lowerPrompt.includes('game') || lowerPrompt.includes('team') || lowerPrompt.includes('player')) {
+    return {
+      category: 'sports',
+      specificRequest: prompt,
+      keywords: extractKeywords(prompt, ['sport', 'game', 'team', 'player', 'score', 'match'])
+    }
+  }
+  
+  // Default to general category
+  return {
+    category: 'general',
+    specificRequest: prompt,
+    keywords: prompt.split(' ').filter(word => word.length > 3).slice(0, 5)
+  }
+}
+
+// Helper function to extract relevant keywords
+function extractKeywords(text: string, relevantWords: string[]): string[] {
+  const words = text.toLowerCase().split(/\s+/)
+  const keywords = words.filter(word => 
+    relevantWords.some(relevant => word.includes(relevant)) || word.length > 4
+  )
+  return [...new Set(keywords)].slice(0, 5) // Remove duplicates and limit to 5
 }
 
 async function fetchFinanceData(request: string, keywords: string[], rows: number): Promise<RealDataResult> {

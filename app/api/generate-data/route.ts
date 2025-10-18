@@ -1,10 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { generateObject } from "ai"
-import { z } from "zod"
 import { fetchRealData } from "@/lib/real-data-fetcher"
+import { generateMockData } from "@/lib/mock-data-generator"
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if API key is configured
+    const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Gemini API key not configured. Please add GOOGLE_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY to your environment variables." },
+        { status: 500 }
+      )
+    }
+
     const { dataType, prompt, rows } = await request.json()
 
     if (!prompt || !prompt.trim()) {
@@ -14,23 +22,24 @@ export async function POST(request: NextRequest) {
     const rowCount = Math.min(Math.max(1, rows || 10), 100) // Limit to 100 rows
 
     if (dataType === "mock") {
-      const { object } = await generateObject({
-        model: "google/gemini-2.0-flash-exp",
-        schema: z.object({
-          fields: z.array(z.string()).describe("Array of field names for the data"),
-          data: z.array(z.record(z.any())).describe(`Array of ${rowCount} data objects with the specified fields`),
-        }),
-        prompt: `You are a mock data generator. Generate realistic but fake data based on the user's description. Create ${rowCount} rows of data with appropriate field names and realistic values.\n\nUser request: ${prompt}\n\nGenerate exactly ${rowCount} rows of data.`,
-      })
-
-      if (!object.data || object.data.length === 0) {
+      try {
+        const result = await generateMockData(prompt, rowCount)
+        return NextResponse.json({ 
+          data: result.data,
+          fields: result.fields,
+          source: "AI Generated Mock Data"
+        })
+      } catch (error) {
+        console.error("[v0] Error generating mock data:", error)
         return NextResponse.json(
-          { error: "Failed to generate mock data. Please try a different description." },
-          { status: 500 },
+          {
+            error: error instanceof Error 
+              ? error.message 
+              : "Failed to generate mock data. Please try a different description."
+          },
+          { status: 500 }
         )
       }
-
-      return NextResponse.json({ data: object.data })
     } else {
       try {
         const result = await fetchRealData(prompt, rowCount)
