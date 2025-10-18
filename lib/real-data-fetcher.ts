@@ -84,7 +84,18 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
 function fallbackCategorization(prompt: string): { category: string; specificRequest: string; keywords: string[] } {
   const lowerPrompt = prompt.toLowerCase()
   
-  // Simple keyword-based categorization
+  // Simple keyword-based categorization with better employee/business data handling
+  if (lowerPrompt.includes('employee') || lowerPrompt.includes('staff') || lowerPrompt.includes('worker') || 
+      lowerPrompt.includes('salary') || lowerPrompt.includes('job') || lowerPrompt.includes('career') ||
+      lowerPrompt.includes('company') || lowerPrompt.includes('business') || lowerPrompt.includes('startup') ||
+      lowerPrompt.includes('office') || lowerPrompt.includes('department') || lowerPrompt.includes('hr')) {
+    return {
+      category: 'general', // Use general category for mock-like business data
+      specificRequest: `Generate realistic business/employee data: ${prompt}`,
+      keywords: extractKeywords(prompt, ['employee', 'salary', 'job', 'company', 'business', 'startup', 'skills', 'department'])
+    }
+  }
+  
   if (lowerPrompt.includes('stock') || lowerPrompt.includes('finance') || lowerPrompt.includes('market') || lowerPrompt.includes('crypto') || lowerPrompt.includes('bitcoin')) {
     return {
       category: lowerPrompt.includes('crypto') || lowerPrompt.includes('bitcoin') ? 'crypto' : 'finance',
@@ -855,8 +866,40 @@ async function fetchNLPDatasets(request: string, keywords: string[], rows: numbe
 
 async function fetchGeneralData(request: string, keywords: string[], rows: number): Promise<RealDataResult> {
   try {
-    // Try to fetch from multiple general APIs and combine results
+    // Check if this is a business/employee data request
+    const isBusinessRequest = keywords.some(keyword => 
+      ['employee', 'salary', 'job', 'company', 'business', 'startup', 'skills', 'department'].includes(keyword.toLowerCase())
+    ) || request.toLowerCase().includes('employee') || request.toLowerCase().includes('business')
+
+    if (isBusinessRequest) {
+      // For business/employee requests, return a helpful message directing to mock data
+      return {
+        data: [{
+          message: "Employee and business data is not available through real data APIs for privacy reasons.",
+          suggestion: "Please use 'Mock Data' instead to generate realistic employee profiles, salaries, and business information.",
+          alternative: "Mock data can generate: employee names, job titles, salaries, skills, departments, performance metrics, and more.",
+          note: "Mock data is AI-generated, realistic, but completely fictional - perfect for testing and demos."
+        }],
+        source: "Business Data Advisory"
+      }
+    }
+
+    // For other general requests, try to fetch from APIs
     const dataSources = [
+      {
+        name: "Random User API",
+        url: `https://randomuser.me/api/?results=${rows}`,
+        transform: (data: any) => data.results?.map((user: any, index: number) => ({
+          id: index + 1,
+          name: `${user.name?.first} ${user.name?.last}`,
+          email: user.email,
+          country: user.location?.country,
+          age: user.dob?.age,
+          gender: user.gender,
+          phone: user.phone,
+          type: "User Profile"
+        })) || []
+      },
       {
         name: "JSON Placeholder",
         url: "https://jsonplaceholder.typicode.com/posts",
@@ -867,18 +910,6 @@ async function fetchGeneralData(request: string, keywords: string[], rows: numbe
           user_id: item.userId,
           type: "Social Post"
         }))
-      },
-      {
-        name: "Random User API",
-        url: `https://randomuser.me/api/?results=${rows}`,
-        transform: (data: any) => data.results?.map((user: any, index: number) => ({
-          id: index + 1,
-          name: `${user.name?.first} ${user.name?.last}`,
-          email: user.email,
-          country: user.location?.country,
-          age: user.dob?.age,
-          type: "User Profile"
-        })) || []
       }
     ]
 

@@ -4,15 +4,6 @@ import { generateMockData } from "@/lib/mock-data-generator"
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if API key is configured
-    const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Gemini API key not configured. Please add GOOGLE_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY to your environment variables." },
-        { status: 500 }
-      )
-    }
-
     const { dataType, prompt, rows } = await request.json()
 
     if (!prompt || !prompt.trim()) {
@@ -22,6 +13,14 @@ export async function POST(request: NextRequest) {
     const rowCount = Math.min(Math.max(1, rows || 10), 100) // Limit to 100 rows
 
     if (dataType === "mock") {
+      // Check if API key is configured for mock data (requires Gemini AI)
+      const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
+      if (!apiKey) {
+        return NextResponse.json(
+          { error: "Gemini API key not configured. Mock data generation requires GOOGLE_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY in your environment variables." },
+          { status: 500 }
+        )
+      }
       try {
         const result = await generateMockData(prompt, rowCount)
         return NextResponse.json({ 
