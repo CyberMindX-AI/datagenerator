@@ -20,7 +20,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
     try {
       // Create a timeout promise for AI categorization
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('AI categorization timeout')), 15000) // 15 second timeout for categorization
+        setTimeout(() => reject(new Error('AI categorization timeout')), 10000) // 10 second timeout for categorization
       })
 
       const categorizePromise = generateObject({
@@ -50,7 +50,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
   try {
     // Create a timeout promise for data fetching
     const fetchTimeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Data fetch timeout - please try a simpler request')), 30000) // 30 second timeout for data fetching
+      setTimeout(() => reject(new Error('Data fetch timeout - please try a simpler request')), 20000) // 20 second timeout for data fetching
     })
 
     let fetchPromise: Promise<RealDataResult>

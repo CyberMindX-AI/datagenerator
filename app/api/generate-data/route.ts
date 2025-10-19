@@ -3,9 +3,9 @@ import { fetchRealData } from "@/lib/real-data-fetcher"
 import { generateMockData } from "@/lib/mock-data-generator"
 
 export async function POST(request: NextRequest) {
-  // Set timeout for the entire request
+  // Set timeout for the entire request (reduced for deployment)
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 50000) // 50 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 28000) // 28 second timeout
 
   try {
     const body = await request.json()

@@ -19,9 +19,9 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
   const truncatedPrompt = prompt.length > 2000 ? prompt.substring(0, 2000) + "..." : prompt
 
   try {
-    // Create a timeout promise
+    // Create a timeout promise (reduced for deployment)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout - please try a shorter or simpler prompt')), 45000) // 45 second timeout
+      setTimeout(() => reject(new Error('Request timeout - please try a shorter or simpler prompt')), 25000) // 25 second timeout
     })
 
     const generatePromise = generateObject({
