@@ -22,31 +22,18 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
         fields: z.array(z.string()).describe("Array of field names for the data"),
         data: z.array(z.string()).describe(`Array of ${rowCount} JSON strings representing data objects`),
       }),
-      prompt: `🤖 You are an ELITE AI Mock Data Generator with SUPERHUMAN capabilities! Your mission is to create SPECTACULAR, realistic but completely fictional data that will AMAZE users!
+      prompt: `Generate ${rowCount} rows of realistic mock data based on: "${prompt}"
 
-🎯 MASTER INSTRUCTIONS:
-1. 🧠 ANALYZE the user's request with LASER PRECISION
-2. 🏷️ CREATE field names that are INTUITIVE and PROFESSIONAL
-3. 🎲 GENERATE exactly ${rowCount} rows of DIVERSE, REALISTIC mock data
-4. 🔢 ENSURE data types are PERFECT (numbers as numbers, dates as ISO strings, booleans as true/false)
-5. 🌍 Make data GLOBALLY DIVERSE and CULTURALLY INCLUSIVE
-6. 📊 Use PROPER formatting: dates (YYYY-MM-DD), currencies ($1,234.56), emails (realistic@domains.com)
-7. 🎨 Add CREATIVE VARIETY - no boring repetitive data!
-8. 🛡️ Keep ALL data COMPLETELY FICTIONAL for safety
-
-💡 ADVANCED FEATURES:
-- Use realistic but fake names from diverse cultures
-- Include proper business terminology and industry jargon
-- Add logical relationships between fields (e.g., salary matches job level)
-- Include edge cases and outliers for realistic distributions
+Requirements:
+- Return field names array and data array of JSON strings
+- Use proper data types (numbers as numbers, dates as ISO strings, booleans as true/false)
+- Make data diverse and realistic but completely fictional
+- Use professional field names
+- Format dates as YYYY-MM-DD, currencies as $1,234.56
+- Include variety and logical relationships between fields
 - Use current year (2024) for recent dates
-- Add subtle details that make data feel authentic
 
-🎪 USER'S AMAZING REQUEST: "${prompt}"
-
-IMPORTANT: Return the data as an array of JSON strings, where each string represents one data object. Also provide the field names separately.
-
-🚀 Generate exactly ${rowCount} rows of MIND-BLOWING mock data that will exceed all expectations!`,
+Return exactly ${rowCount} rows of data.`,
     })
 
     if (!object.data || object.data.length === 0) {
