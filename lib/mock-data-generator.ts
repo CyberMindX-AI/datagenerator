@@ -14,15 +14,23 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
   }
 
   const rowCount = Math.min(Math.max(1, rows || 10), 100) // Limit to 100 rows
+  
+  // Truncate very long prompts to prevent timeouts
+  const truncatedPrompt = prompt.length > 2000 ? prompt.substring(0, 2000) + "..." : prompt
 
   try {
-    const { object } = await generateObject({
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Request timeout - please try a shorter or simpler prompt')), 45000) // 45 second timeout
+    })
+
+    const generatePromise = generateObject({
       model: google("gemini-2.5-flash"),
       schema: z.object({
         fields: z.array(z.string()).describe("Array of field names for the data"),
         data: z.array(z.string()).describe(`Array of ${rowCount} JSON strings representing data objects`),
       }),
-      prompt: `Generate ${rowCount} rows of realistic mock data based on: "${prompt}"
+      prompt: `Generate ${rowCount} rows of realistic mock data based on: "${truncatedPrompt}"
 
 Requirements:
 - Return field names array and data array of JSON strings
@@ -32,9 +40,12 @@ Requirements:
 - Format dates as YYYY-MM-DD, currencies as $1,234.56
 - Include variety and logical relationships between fields
 - Use current year (2024) for recent dates
+- Keep JSON objects simple and well-formatted
 
 Return exactly ${rowCount} rows of data.`,
     })
+
+    const { object } = await Promise.race([generatePromise, timeoutPromise]) as { object: any }
 
     if (!object.data || object.data.length === 0) {
       throw new Error("Failed to generate mock data. Please try a different description.")

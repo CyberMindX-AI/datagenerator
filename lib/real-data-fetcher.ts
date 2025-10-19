@@ -9,12 +9,21 @@ interface RealDataResult {
 
 export async function fetchRealData(prompt: string, rows: number): Promise<RealDataResult> {
   let intent: { category: string; specificRequest: string; keywords: string[] }
+  
+  // Truncate very long prompts to prevent timeouts
+  const truncatedPrompt = prompt.length > 1500 ? prompt.substring(0, 1500) + "..." : prompt
+  const rowCount = Math.min(Math.max(1, rows || 10), 100) // Limit to 100 rows
 
   // Try to use Gemini AI for smart categorization if API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
   if (apiKey) {
     try {
-      const { object } = await generateObject({
+      // Create a timeout promise for AI categorization
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('AI categorization timeout')), 15000) // 15 second timeout for categorization
+      })
+
+      const categorizePromise = generateObject({
         model: google("gemini-2.5-flash"),
         schema: z.object({
           category: z
@@ -23,58 +32,93 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
           specificRequest: z.string().describe("Specific details about what data to fetch"),
           keywords: z.array(z.string()).describe("Keywords to use for fetching data"),
         }),
-        prompt: `Analyze this data request and determine what category it falls into and what specific data should be fetched: "${prompt}"`,
+        prompt: `Analyze this data request and determine what category it falls into and what specific data should be fetched: "${truncatedPrompt}"`,
       })
+
+      const { object } = await Promise.race([categorizePromise, timeoutPromise]) as { object: any }
       intent = object
-      console.log("[v0] AI-analyzed data intent:", intent)
+      console.log("[API] AI-analyzed data intent:", intent)
     } catch (error) {
-      console.warn("[v0] Gemini AI analysis failed, using fallback categorization:", error)
-      intent = fallbackCategorization(prompt)
+      console.warn("[API] Gemini AI analysis failed, using fallback categorization:", error)
+      intent = fallbackCategorization(truncatedPrompt)
     }
   } else {
-    console.log("[v0] No Gemini API key found, using fallback categorization")
-    intent = fallbackCategorization(prompt)
+    console.log("[API] No Gemini API key found, using fallback categorization")
+    intent = fallbackCategorization(truncatedPrompt)
   }
 
   try {
+    // Create a timeout promise for data fetching
+    const fetchTimeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Data fetch timeout - please try a simpler request')), 30000) // 30 second timeout for data fetching
+    })
+
+    let fetchPromise: Promise<RealDataResult>
+
     switch (intent.category) {
       case "finance":
-        return await fetchFinanceData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchFinanceData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "weather":
-        return await fetchWeatherData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchWeatherData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "news":
-        return await fetchNewsData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchNewsData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "crypto":
-        return await fetchCryptoData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchCryptoData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "sports":
-        return await fetchSportsData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchSportsData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "government":
-        return await fetchGovernmentData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchGovernmentData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "education":
-        return await fetchEducationData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchEducationData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "health":
-        return await fetchHealthData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchHealthData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "environment":
-        return await fetchEnvironmentData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchEnvironmentData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "demographics":
-        return await fetchDemographicsData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchDemographicsData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "transportation":
-        return await fetchTransportationData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchTransportationData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "economics":
-        return await fetchEconomicsData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchEconomicsData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "ml_datasets":
       case "ai_training":
-        return await fetchMLDatasets(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchMLDatasets(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "computer_vision":
-        return await fetchComputerVisionData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchComputerVisionData(intent.specificRequest, intent.keywords, rowCount)
+        break
       case "nlp_datasets":
-        return await fetchNLPDatasets(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchNLPDatasets(intent.specificRequest, intent.keywords, rowCount)
+        break
       default:
-        return await fetchGeneralData(intent.specificRequest, intent.keywords, rows)
+        fetchPromise = fetchGeneralData(intent.specificRequest, intent.keywords, rowCount)
+        break
     }
+
+    return await Promise.race([fetchPromise, fetchTimeoutPromise]) as RealDataResult
   } catch (error) {
-    console.error("[v0] Error fetching real data:", error)
-    throw new Error("Failed to fetch real data from sources")
+    console.error("[API] Error fetching real data:", error)
+    
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+    const isTimeout = errorMessage.includes('timeout')
+    
+    throw new Error(
+      isTimeout 
+        ? "Request timeout - please try a shorter or simpler prompt"
+        : `Failed to fetch real data: ${errorMessage}`
+    )
   }
 }
 

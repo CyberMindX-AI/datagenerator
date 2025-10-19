@@ -39,10 +39,37 @@ export function DataGeneratorForm() {
         body: JSON.stringify({ dataType, format, prompt, rows: Number.parseInt(rows) }),
       })
 
+      // Check if response is ok
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`[v0] HTTP Error ${response.status}:`, errorText)
+        
+        // Try to parse as JSON, fallback to text
+        let errorData
+        try {
+          errorData = JSON.parse(errorText)
+        } catch {
+          errorData = { error: `Server Error (${response.status})`, details: errorText }
+        }
+        
+        const errorMessage = errorData.error || `Server returned ${response.status}`
+        const suggestion = errorData.suggestion || errorData.details || "Please try again"
+        alert(`${errorMessage}\n\n${suggestion}`)
+        return
+      }
+
       const data = await response.json()
 
-      if (data.error) {
-        alert(data.error)
+      // Handle new response format
+      if (!data.success || data.error) {
+        const errorMessage = data.error || "Unknown error occurred"
+        const suggestion = data.suggestion || data.details || "Please try again"
+        alert(`${errorMessage}\n\n${suggestion}`)
+        return
+      }
+
+      if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+        alert("No data was generated. Please try a different prompt.")
         return
       }
 
@@ -50,7 +77,14 @@ export function DataGeneratorForm() {
       setShowPreview(true)
     } catch (error) {
       console.error("[v0] Error generating data:", error)
-      alert("Failed to generate data. Please try again.")
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        alert("Network error: Unable to connect to the server. Please check if the development server is running.")
+      } else if (error instanceof SyntaxError && error.message.includes('JSON')) {
+        alert("Server returned invalid response. This might be a server configuration issue.")
+      } else {
+        alert(`Failed to generate data: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again.`)
+      }
     } finally {
       setIsGenerating(false)
     }
