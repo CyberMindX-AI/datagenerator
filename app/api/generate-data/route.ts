@@ -3,6 +3,13 @@ import { fetchRealData } from "@/lib/real-data-fetcher"
 import { generateMockData } from "@/lib/mock-data-generator"
 
 export async function POST(request: NextRequest) {
+  // Check if client wants streaming response
+  const isStreaming = request.headers.get('accept')?.includes('text/stream-json')
+  
+  if (isStreaming) {
+    return handleStreamingRequest(request)
+  }
+
   // Set timeout for the entire request (reduced for deployment)
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 28000) // 28 second timeout
@@ -118,5 +125,117 @@ export async function POST(request: NextRequest) {
       details: error instanceof Error ? error.message : "An unexpected error occurred",
       suggestion: "Please try again or contact support if the issue persists"
     }, { status: 500 })
+  }
+}
+
+// Streaming response handler for large requests
+async function handleStreamingRequest(request: NextRequest) {
+  const body = await request.json()
+  const { dataType, prompt, rows } = body
+  
+  // Validate input
+  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+    return NextResponse.json({ 
+      error: "Please provide a valid data description"
+    }, { status: 400 })
+  }
+
+  const rowCount = Math.min(Math.max(1, parseInt(rows) || 10), 100)
+  
+  // Create streaming response
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send initial response
+        controller.enqueue(new TextEncoder().encode(
+          JSON.stringify({ status: 'started', totalRows: rowCount }) + '\n'
+        ))
+
+        if (dataType === "mock") {
+          await streamMockDataGeneration(controller, prompt, rowCount)
+        } else {
+          await streamRealDataGeneration(controller, prompt, rowCount)
+        }
+
+        // Send completion signal
+        controller.enqueue(new TextEncoder().encode(
+          JSON.stringify({ status: 'completed' }) + '\n'
+        ))
+        controller.close()
+      } catch (error) {
+        controller.enqueue(new TextEncoder().encode(
+          JSON.stringify({ 
+            status: 'error', 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          }) + '\n'
+        ))
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/stream-json',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    }
+  })
+}
+
+// Stream mock data generation in batches
+async function streamMockDataGeneration(controller: ReadableStreamDefaultController, prompt: string, totalRows: number) {
+  const batchSize = 5 // Generate 5 rows at a time
+  const batches = Math.ceil(totalRows / batchSize)
+  
+  for (let i = 0; i < batches; i++) {
+    const currentBatchSize = Math.min(batchSize, totalRows - (i * batchSize))
+    
+    try {
+      const result = await generateMockData(prompt, currentBatchSize)
+      
+      controller.enqueue(new TextEncoder().encode(
+        JSON.stringify({
+          status: 'batch',
+          batchNumber: i + 1,
+          totalBatches: batches,
+          data: result.data,
+          fields: result.fields
+        }) + '\n'
+      ))
+      
+      // Small delay to prevent overwhelming the client
+      await new Promise(resolve => setTimeout(resolve, 100))
+    } catch (error) {
+      controller.enqueue(new TextEncoder().encode(
+        JSON.stringify({
+          status: 'batch_error',
+          batchNumber: i + 1,
+          error: error instanceof Error ? error.message : 'Batch generation failed'
+        }) + '\n'
+      ))
+    }
+  }
+}
+
+// Stream real data generation
+async function streamRealDataGeneration(controller: ReadableStreamDefaultController, prompt: string, totalRows: number) {
+  try {
+    const result = await fetchRealData(prompt, totalRows)
+    
+    controller.enqueue(new TextEncoder().encode(
+      JSON.stringify({
+        status: 'data',
+        data: result.data,
+        source: result.source
+      }) + '\n'
+    ))
+  } catch (error) {
+    controller.enqueue(new TextEncoder().encode(
+      JSON.stringify({
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Real data fetch failed'
+      }) + '\n'
+    ))
   }
 }
