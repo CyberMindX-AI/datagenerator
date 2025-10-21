@@ -2,7 +2,20 @@ import { type NextRequest, NextResponse } from "next/server"
 import { fetchRealData } from "@/lib/real-data-fetcher"
 import { generateMockData } from "@/lib/mock-data-generator"
 
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+// Handle OPTIONS requests for CORS preflight
+export async function OPTIONS() {
+  return new Response(null, { status: 200, headers: corsHeaders })
+}
+
 export async function POST(request: NextRequest) {
+
   // Check if client wants streaming response
   const isStreaming = request.headers.get('accept')?.includes('text/stream-json')
   
@@ -10,9 +23,9 @@ export async function POST(request: NextRequest) {
     return handleStreamingRequest(request)
   }
 
-  // Set timeout for the entire request (reduced for deployment)
+  // Set timeout for the entire request (reduced for better UX)
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 28000) // 28 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
 
   try {
     const body = await request.json()
@@ -61,7 +74,7 @@ export async function POST(request: NextRequest) {
           fields: result.fields,
           source: "AI Generated Mock Data",
           rowCount: result.data.length
-        })
+        }, { headers: corsHeaders })
       } catch (error) {
         clearTimeout(timeoutId)
         console.error("[API] Error generating mock data:", error)
@@ -78,7 +91,7 @@ export async function POST(request: NextRequest) {
               ? "Try using a shorter or simpler prompt" 
               : "Please try a different description or check your API key"
           },
-          { status: isTimeout ? 504 : 500 }
+          { status: isTimeout ? 504 : 500, headers: corsHeaders }
         )
       }
     } else {
@@ -90,7 +103,7 @@ export async function POST(request: NextRequest) {
           data: result.data,
           source: result.source,
           rowCount: result.data?.length || 0
-        })
+        }, { headers: corsHeaders })
       } catch (error) {
         clearTimeout(timeoutId)
         console.error("[API] Error fetching real data:", error)
@@ -101,7 +114,7 @@ export async function POST(request: NextRequest) {
             details: error instanceof Error ? error.message : "Unknown error occurred",
             suggestion: "Please try a different description or check if the data source is available."
           },
-          { status: 500 }
+          { status: 500, headers: corsHeaders }
         )
       }
     }
@@ -116,7 +129,7 @@ export async function POST(request: NextRequest) {
         error: "Invalid Request Format",
         details: "Request body must be valid JSON",
         suggestion: "Please check your request format"
-      }, { status: 400 })
+      }, { status: 400, headers: corsHeaders })
     }
     
     return NextResponse.json({ 
@@ -124,7 +137,7 @@ export async function POST(request: NextRequest) {
       error: "Internal Server Error",
       details: error instanceof Error ? error.message : "An unexpected error occurred",
       suggestion: "Please try again or contact support if the issue persists"
-    }, { status: 500 })
+    }, { status: 500, headers: corsHeaders })
   }
 }
 

@@ -20,7 +20,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
     try {
       // Create a timeout promise for AI categorization
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('AI categorization timeout')), 10000) // 10 second timeout for categorization
+        setTimeout(() => reject(new Error('AI categorization timeout')), 5000) // 5 second timeout for categorization
       })
 
       const categorizePromise = generateObject({
@@ -50,7 +50,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
   try {
     // Create a timeout promise for data fetching
     const fetchTimeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Data fetch timeout - please try a simpler request')), 20000) // 20 second timeout for data fetching
+      setTimeout(() => reject(new Error('Data fetch timeout - please try a simpler request')), 10000) // 10 second timeout for data fetching
     })
 
     let fetchPromise: Promise<RealDataResult>
@@ -191,29 +191,47 @@ async function fetchFinanceData(request: string, keywords: string[], rows: numbe
   // For demo purposes, using a free API or web scraping
   // In production, you'd use APIs like Alpha Vantage, Yahoo Finance, etc.
 
-  const response = await fetch(
-    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${rows}&page=1`,
-  )
+  try {
+    // Create a timeout promise for the fetch request
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
+    
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${rows}&page=1`,
+      { 
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'DataGenerator/1.0'
+        }
+      }
+    )
+    
+    clearTimeout(timeoutId)
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch finance data")
-  }
+    if (!response.ok) {
+      throw new Error(`Finance API returned ${response.status}: ${response.statusText}`)
+    }
 
-  const rawData = await response.json()
+    const rawData = await response.json()
 
-  // Transform to a cleaner format
-  const data = rawData.slice(0, rows).map((item: any) => ({
-    name: item.name,
-    symbol: item.symbol.toUpperCase(),
-    current_price: item.current_price,
-    market_cap: item.market_cap,
-    price_change_24h: item.price_change_percentage_24h,
-    total_volume: item.total_volume,
-  }))
+    // Transform to a cleaner format
+    const data = rawData.slice(0, rows).map((item: any) => ({
+      name: item.name,
+      symbol: item.symbol.toUpperCase(),
+      current_price: item.current_price,
+      market_cap: item.market_cap,
+      price_change_24h: item.price_change_percentage_24h,
+      total_volume: item.total_volume,
+    }))
 
-  return {
-    data,
-    source: "CoinGecko API",
+    return {
+      data,
+      source: "CoinGecko API",
+    }
+  } catch (error) {
+    console.error("[API] Finance data fetch error:", error)
+    throw new Error(`Failed to fetch finance data: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 

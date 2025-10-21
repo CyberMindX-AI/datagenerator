@@ -35,7 +35,10 @@ export function DataGeneratorForm() {
     try {
       const response = await fetch("/api/generate-data", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
         body: JSON.stringify({ dataType, format, prompt, rows: Number.parseInt(rows) }),
       })
 
