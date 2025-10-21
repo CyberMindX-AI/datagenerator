@@ -2,6 +2,46 @@ import { generateObject } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
 
+// Helper function to analyze user request and suggest fields
+function analyzeUserRequest(prompt: string): string[] {
+  const lowerPrompt = prompt.toLowerCase()
+  const suggestedFields: string[] = []
+  
+  // Common field patterns
+  const fieldPatterns = {
+    'instruction': ['instruction', 'task', 'command', 'request', 'what the user wants'],
+    'input': ['input', 'context', 'example', 'content', 'data', 'prompt'],
+    'output': ['output', 'response', 'result', 'answer', 'description'],
+    'name': ['name', 'full name', 'first name', 'last name', 'person', 'user', 'customer', 'employee'],
+    'email': ['email', 'e-mail', 'contact', 'address'],
+    'phone': ['phone', 'telephone', 'mobile', 'contact'],
+    'age': ['age', 'years old', 'birth'],
+    'salary': ['salary', 'wage', 'income', 'pay', 'compensation'],
+    'department': ['department', 'division', 'team', 'group'],
+    'company': ['company', 'organization', 'business', 'employer'],
+    'address': ['address', 'location', 'city', 'street'],
+    'date': ['date', 'time', 'created', 'updated', 'hired'],
+    'price': ['price', 'cost', 'amount', 'value', 'money'],
+    'product': ['product', 'item', 'goods', 'service'],
+    'category': ['category', 'type', 'kind', 'classification'],
+    'status': ['status', 'state', 'condition', 'active'],
+    'industry': ['industry', 'sector', 'domain', 'field'],
+    'chatbot': ['chatbot', 'bot', 'assistant', 'ai'],
+    'llm': ['llm', 'language model', 'ai model', 'fine-tune', 'training'],
+    'faq': ['faq', 'question', 'answer', 'help'],
+    'id': ['id', 'identifier', 'number', 'code']
+  }
+  
+  // Analyze prompt for field suggestions
+  Object.entries(fieldPatterns).forEach(([field, patterns]) => {
+    if (patterns.some(pattern => lowerPrompt.includes(pattern))) {
+      suggestedFields.push(field)
+    }
+  })
+  
+  return suggestedFields.length > 0 ? suggestedFields : ['id', 'name', 'value']
+}
+
 interface MockDataResult {
   data: Record<string, any>[]
   fields: string[]
@@ -13,20 +53,20 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
     throw new Error("Gemini API key not configured. Please add GOOGLE_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY to your environment variables.")
   }
 
-  const rowCount = Math.min(Math.max(1, rows || 10), 100) // Limit to 100 rows
+  const rowCount = Math.min(Math.max(1, rows || 10), 50) // Limit to 50 rows
   
-  // Truncate very long prompts to prevent timeouts
-  const truncatedPrompt = prompt.length > 2000 ? prompt.substring(0, 2000) + "..." : prompt
-
+  // Gemini can handle long prompts - no need to truncate
+  const fullPrompt = prompt
+  
   // For large row counts, use batch processing
   if (rowCount > 15) {
-    return await generateMockDataInBatches(truncatedPrompt, rowCount)
+    return await generateMockDataInBatches(fullPrompt, rowCount)
   }
 
   try {
-    // Create a timeout promise (reduced for better UX)
+    // Create a timeout promise (adjusted for long prompts)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout - please try a shorter or simpler prompt')), 12000) // 12 second timeout
+      setTimeout(() => reject(new Error('Request timeout - Gemini is processing your detailed request')), 20000) // 20 second timeout for long prompts
     })
 
     const generatePromise = generateObject({
@@ -35,19 +75,11 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
         fields: z.array(z.string()).describe("Array of field names for the data"),
         data: z.array(z.string()).describe(`Array of ${rowCount} JSON strings representing data objects`),
       }),
-      prompt: `Generate ${rowCount} rows of realistic mock data based on: "${truncatedPrompt}"
+      prompt: `${fullPrompt}
 
-Requirements:
-- Return field names array and data array of JSON strings
-- Use proper data types (numbers as numbers, dates as ISO strings, booleans as true/false)
-- Make data diverse and realistic but completely fictional
-- Use professional field names
-- Format dates as YYYY-MM-DD, currencies as $1,234.56
-- Include variety and logical relationships between fields
-- Use current year (2024) for recent dates
-- Keep JSON objects simple and well-formatted
-
-Return exactly ${rowCount} rows of data.`,
+Generate ${rowCount} rows of data as JSON. Return as:
+- fields: array of field names
+- data: array of JSON strings`,
     })
 
     const { object } = await Promise.race([generatePromise, timeoutPromise]) as { object: any }
@@ -82,7 +114,9 @@ Return exactly ${rowCount} rows of data.`,
 
 // Batch processing function for large row counts
 async function generateMockDataInBatches(prompt: string, totalRows: number): Promise<MockDataResult> {
-  const batchSize = 10 // Generate 10 rows per batch to stay within timeout limits
+  // Use smaller batches for complex prompts
+  const isComplexPrompt = prompt.length > 200
+  const batchSize = isComplexPrompt ? 5 : 10
   const batches = Math.ceil(totalRows / batchSize)
   
   let allData: Record<string, any>[] = []
@@ -96,34 +130,61 @@ async function generateMockDataInBatches(prompt: string, totalRows: number): Pro
     try {
       console.log(`[MockDataGenerator] Processing batch ${i + 1}/${batches} (${currentBatchSize} rows)`)
       
-      // Create a timeout promise for each batch
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`Batch ${i + 1} timeout - please try a shorter prompt`)), 10000) // 10 second timeout per batch
-      })
+      let object: any
+      let retryCount = 0
+      const maxRetries = 2
+      
+      while (retryCount <= maxRetries) {
+        try {
+          // Create a timeout promise for each batch (increased for long prompts)
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(`Batch ${i + 1} timeout - Gemini is processing your detailed request`)), 25000) // 25 second timeout per batch for long prompts
+          })
 
-      const generatePromise = generateObject({
-        model: google("gemini-2.5-flash"),
-        schema: z.object({
-          fields: z.array(z.string()).describe("Array of field names for the data"),
-          data: z.array(z.string()).describe(`Array of ${currentBatchSize} JSON strings representing data objects`),
-        }),
-        prompt: `Generate ${currentBatchSize} rows of realistic mock data based on: "${prompt}"
+          // Use progressively simpler prompts on retries
+          let promptText: string
+          if (retryCount === 0) {
+            // First attempt: pass user prompt directly to Gemini
+            promptText = `${prompt}
 
-Requirements:
-- Return field names array and data array of JSON strings
-- Use proper data types (numbers as numbers, dates as ISO strings, booleans as true/false)
-- Make data diverse and realistic but completely fictional
-- Use professional field names
-- Format dates as YYYY-MM-DD, currencies as $1,234.56
-- Include variety and logical relationships between fields
-- Use current year (2024) for recent dates
-- Keep JSON objects simple and well-formatted
-${i === 0 ? '- This is the first batch, establish the field structure' : '- Match the field structure from previous batches'}
+Generate ${currentBatchSize} rows of data as JSON. Return as:
+- fields: array of field names  
+- data: array of JSON strings`
+          } else if (retryCount === 1) {
+            // Second attempt: simplified version of user prompt
+            promptText = `${prompt.substring(0, 200)}...
 
-Return exactly ${currentBatchSize} rows of data.`,
-      })
+Generate ${currentBatchSize} rows as JSON.`
+          } else {
+            // Final attempt: ultra-simple
+            promptText = `Generate ${currentBatchSize} rows of data as JSON.`
+          }
 
-      const { object } = await Promise.race([generatePromise, timeoutPromise]) as { object: any }
+          const generatePromise = generateObject({
+            model: google("gemini-2.5-flash"),
+            schema: z.object({
+              fields: z.array(z.string()).describe("Array of field names for the data"),
+              data: z.array(z.string()).describe(`Array of ${currentBatchSize} JSON strings representing data objects`),
+            }),
+            prompt: promptText,
+          })
+
+          const result = await Promise.race([generatePromise, timeoutPromise]) as { object: any }
+          object = result.object
+          break // Success, exit retry loop
+          
+        } catch (error) {
+          retryCount++
+          console.warn(`[MockDataGenerator] Batch ${i + 1} attempt ${retryCount} failed:`, error instanceof Error ? error.message : 'Unknown error')
+          
+          if (retryCount > maxRetries) {
+            throw error // Re-throw if all retries exhausted
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      }
 
       if (!object.data || object.data.length === 0) {
         throw new Error(`Failed to generate batch ${i + 1}. Please try a different description.`)
@@ -139,9 +200,30 @@ Return exactly ${currentBatchSize} rows of data.`,
         }
       })
 
-      // Set fields from first batch
+      // Set fields from first batch and ensure consistency
       if (i === 0) {
         fields = object.fields || Object.keys(parsedBatchData[0] || {})
+        console.log(`[MockDataGenerator] Established field structure:`, fields)
+      } else {
+        // Validate that subsequent batches have consistent fields
+        const currentFields = Object.keys(parsedBatchData[0] || {})
+        if (currentFields.length !== fields.length || !currentFields.every(field => fields.includes(field))) {
+          console.warn(`[MockDataGenerator] Field mismatch in batch ${i + 1}. Expected:`, fields, 'Got:', currentFields)
+          // Normalize data to match expected fields
+          parsedBatchData.forEach((row: any) => {
+            fields.forEach(field => {
+              if (!(field in row)) {
+                row[field] = null // Add missing fields
+              }
+            })
+            // Remove extra fields
+            Object.keys(row).forEach(key => {
+              if (!fields.includes(key)) {
+                delete (row as any)[key]
+              }
+            })
+          })
+        }
       }
 
       allData = allData.concat(parsedBatchData)
@@ -198,7 +280,7 @@ export async function generateTypedMockData(
     throw new Error(`Unsupported data type: ${dataType}. Available types: ${getAvailableDataTypes().join(', ')}`)
   }
 
-  const rowCount = Math.min(Math.max(1, rows || 10), 100)
+  const rowCount = Math.min(Math.max(1, rows || 10), 50)
 
   // Enhanced prompts for different data types - AWESOME EDITION! 🚀
   const typePrompts = {

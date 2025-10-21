@@ -10,9 +10,9 @@ interface RealDataResult {
 export async function fetchRealData(prompt: string, rows: number): Promise<RealDataResult> {
   let intent: { category: string; specificRequest: string; keywords: string[] }
   
-  // Truncate very long prompts to prevent timeouts
-  const truncatedPrompt = prompt.length > 1500 ? prompt.substring(0, 1500) + "..." : prompt
-  const rowCount = Math.min(Math.max(1, rows || 10), 100) // Limit to 100 rows
+  // Gemini can handle long prompts - use full context
+  const fullPrompt = prompt
+  const rowCount = Math.min(Math.max(1, rows || 10), 50) // Limit to 50 rows
 
   // Try to use Gemini AI for smart categorization if API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
@@ -20,7 +20,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
     try {
       // Create a timeout promise for AI categorization
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('AI categorization timeout')), 5000) // 5 second timeout for categorization
+        setTimeout(() => reject(new Error('AI categorization timeout')), 8000) // 8 second timeout for categorization
       })
 
       const categorizePromise = generateObject({
@@ -32,7 +32,7 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
           specificRequest: z.string().describe("Specific details about what data to fetch"),
           keywords: z.array(z.string()).describe("Keywords to use for fetching data"),
         }),
-        prompt: `Analyze this data request and determine what category it falls into and what specific data should be fetched: "${truncatedPrompt}"`,
+        prompt: `Analyze this data request and categorize it: "${fullPrompt}" falls into and what specific data should be fetched: "${fullPrompt}"`,
       })
 
       const { object } = await Promise.race([categorizePromise, timeoutPromise]) as { object: any }
@@ -40,11 +40,11 @@ export async function fetchRealData(prompt: string, rows: number): Promise<RealD
       console.log("[API] AI-analyzed data intent:", intent)
     } catch (error) {
       console.warn("[API] Gemini AI analysis failed, using fallback categorization:", error)
-      intent = fallbackCategorization(truncatedPrompt)
+      intent = fallbackCategorization(fullPrompt)
     }
   } else {
     console.log("[API] No Gemini API key found, using fallback categorization")
-    intent = fallbackCategorization(truncatedPrompt)
+    intent = fallbackCategorization(fullPrompt)
   }
 
   try {

@@ -208,12 +208,12 @@ export function DataGeneratorForm() {
               id="rows"
               type="number"
               min="1"
-              max="100"
+              max="50"
               value={rows}
               onChange={(e) => setRows(e.target.value)}
               className="bg-background text-foreground"
             />
-            <p className="text-xs text-muted-foreground">Maximum 100 rows for optimal performance</p>
+            <p className="text-xs text-muted-foreground">Maximum 50 rows for optimal performance</p>
           </div>
 
           {/* Actions */}

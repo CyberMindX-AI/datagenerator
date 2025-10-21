@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
     // Set timeout for the entire request (adjusted for batch processing)
     const controller = new AbortController()
     const requestedRows = parseInt(rows) || 10
-    // Dynamic timeout based on row count: 15s base + 2s per batch of 10 rows
-    const dynamicTimeout = requestedRows > 15 ? 15000 + Math.ceil(requestedRows / 10) * 2000 : 15000
+    // Dynamic timeout based on row count: 25s base + 5s per batch (optimized for long prompts)
+    const dynamicTimeout = requestedRows > 15 ? 25000 + Math.ceil(requestedRows / 5) * 5000 : 25000
     timeoutId = setTimeout(() => controller.abort(), dynamicTimeout)
     
     console.log(`[API] Processing ${requestedRows} rows with ${dynamicTimeout}ms timeout`)
@@ -49,16 +49,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate row count
-    const rowCount = Math.min(Math.max(1, parseInt(rows) || 10), 100)
+    const rowCount = Math.min(Math.max(1, parseInt(rows) || 10), 50)
     if (isNaN(rowCount)) {
       if (timeoutId) clearTimeout(timeoutId)
       return NextResponse.json({ 
         error: "Invalid row count",
-        details: "Rows must be a valid number between 1 and 100"
+        details: "Rows must be a valid number between 1 and 50"
       }, { status: 400 })
     }
 
-    if (dataType === "mock") {
+    // Auto-detect if request should use mock data generation
+    const shouldUseMockData = dataType === "mock" || 
+      prompt.toLowerCase().includes('json records') ||
+      prompt.toLowerCase().includes('fine-tune') ||
+      prompt.toLowerCase().includes('llm') ||
+      prompt.toLowerCase().includes('training data') ||
+      prompt.toLowerCase().includes('instruction') ||
+      prompt.toLowerCase().includes('chatbot') ||
+      prompt.toLowerCase().includes('custom')
+
+    if (dataType !== "mock" && shouldUseMockData) {
+      console.log("[API] Auto-detected mock data request, switching from real to mock data generation")
+    }
+
+    if (shouldUseMockData) {
       // Check if API key is configured for mock data (requires Gemini AI)
       const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
       if (!apiKey) {
