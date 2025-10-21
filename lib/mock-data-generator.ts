@@ -18,6 +18,11 @@ export async function generateMockData(prompt: string, rows: number): Promise<Mo
   // Truncate very long prompts to prevent timeouts
   const truncatedPrompt = prompt.length > 2000 ? prompt.substring(0, 2000) + "..." : prompt
 
+  // For large row counts, use batch processing
+  if (rowCount > 15) {
+    return await generateMockDataInBatches(truncatedPrompt, rowCount)
+  }
+
   try {
     // Create a timeout promise (reduced for better UX)
     const timeoutPromise = new Promise((_, reject) => {
@@ -72,6 +77,91 @@ Return exactly ${rowCount} rows of data.`,
         ? `Mock data generation failed: ${error.message}`
         : "Failed to generate mock data. Please try again with a different description."
     )
+  }
+}
+
+// Batch processing function for large row counts
+async function generateMockDataInBatches(prompt: string, totalRows: number): Promise<MockDataResult> {
+  const batchSize = 10 // Generate 10 rows per batch to stay within timeout limits
+  const batches = Math.ceil(totalRows / batchSize)
+  
+  let allData: Record<string, any>[] = []
+  let fields: string[] = []
+  
+  console.log(`[MockDataGenerator] Processing ${totalRows} rows in ${batches} batches of ${batchSize}`)
+  
+  for (let i = 0; i < batches; i++) {
+    const currentBatchSize = Math.min(batchSize, totalRows - (i * batchSize))
+    
+    try {
+      console.log(`[MockDataGenerator] Processing batch ${i + 1}/${batches} (${currentBatchSize} rows)`)
+      
+      // Create a timeout promise for each batch
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Batch ${i + 1} timeout - please try a shorter prompt`)), 10000) // 10 second timeout per batch
+      })
+
+      const generatePromise = generateObject({
+        model: google("gemini-2.5-flash"),
+        schema: z.object({
+          fields: z.array(z.string()).describe("Array of field names for the data"),
+          data: z.array(z.string()).describe(`Array of ${currentBatchSize} JSON strings representing data objects`),
+        }),
+        prompt: `Generate ${currentBatchSize} rows of realistic mock data based on: "${prompt}"
+
+Requirements:
+- Return field names array and data array of JSON strings
+- Use proper data types (numbers as numbers, dates as ISO strings, booleans as true/false)
+- Make data diverse and realistic but completely fictional
+- Use professional field names
+- Format dates as YYYY-MM-DD, currencies as $1,234.56
+- Include variety and logical relationships between fields
+- Use current year (2024) for recent dates
+- Keep JSON objects simple and well-formatted
+${i === 0 ? '- This is the first batch, establish the field structure' : '- Match the field structure from previous batches'}
+
+Return exactly ${currentBatchSize} rows of data.`,
+      })
+
+      const { object } = await Promise.race([generatePromise, timeoutPromise]) as { object: any }
+
+      if (!object.data || object.data.length === 0) {
+        throw new Error(`Failed to generate batch ${i + 1}. Please try a different description.`)
+      }
+
+      // Parse the JSON strings back to objects
+      const parsedBatchData = object.data.map((jsonStr: string) => {
+        try {
+          return JSON.parse(jsonStr)
+        } catch (error) {
+          // Fallback: create a simple object if JSON parsing fails
+          return { value: jsonStr }
+        }
+      })
+
+      // Set fields from first batch
+      if (i === 0) {
+        fields = object.fields || Object.keys(parsedBatchData[0] || {})
+      }
+
+      allData = allData.concat(parsedBatchData)
+      
+      // Small delay between batches to prevent rate limiting
+      if (i < batches - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+      
+    } catch (error) {
+      console.error(`[MockDataGenerator] Error in batch ${i + 1}:`, error)
+      throw new Error(`Failed to generate batch ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+  
+  console.log(`[MockDataGenerator] Successfully generated ${allData.length} rows in ${batches} batches`)
+  
+  return {
+    data: allData,
+    fields: fields,
   }
 }
 

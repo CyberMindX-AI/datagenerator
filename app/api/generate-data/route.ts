@@ -23,17 +23,25 @@ export async function POST(request: NextRequest) {
     return handleStreamingRequest(request)
   }
 
-  // Set timeout for the entire request (reduced for better UX)
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
-
+  // Declare timeout variables in outer scope
+  let timeoutId: NodeJS.Timeout | null = null
+  
   try {
     const body = await request.json()
     const { dataType, prompt, rows } = body
 
+    // Set timeout for the entire request (adjusted for batch processing)
+    const controller = new AbortController()
+    const requestedRows = parseInt(rows) || 10
+    // Dynamic timeout based on row count: 15s base + 2s per batch of 10 rows
+    const dynamicTimeout = requestedRows > 15 ? 15000 + Math.ceil(requestedRows / 10) * 2000 : 15000
+    timeoutId = setTimeout(() => controller.abort(), dynamicTimeout)
+    
+    console.log(`[API] Processing ${requestedRows} rows with ${dynamicTimeout}ms timeout`)
+
     // Validate input
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-      clearTimeout(timeoutId)
+      if (timeoutId) clearTimeout(timeoutId)
       return NextResponse.json({ 
         error: "Please provide a valid data description",
         details: "Prompt is required and must be a non-empty string"
@@ -43,7 +51,7 @@ export async function POST(request: NextRequest) {
     // Validate row count
     const rowCount = Math.min(Math.max(1, parseInt(rows) || 10), 100)
     if (isNaN(rowCount)) {
-      clearTimeout(timeoutId)
+      if (timeoutId) clearTimeout(timeoutId)
       return NextResponse.json({ 
         error: "Invalid row count",
         details: "Rows must be a valid number between 1 and 100"
@@ -54,7 +62,7 @@ export async function POST(request: NextRequest) {
       // Check if API key is configured for mock data (requires Gemini AI)
       const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY
       if (!apiKey) {
-        clearTimeout(timeoutId)
+        if (timeoutId) clearTimeout(timeoutId)
         return NextResponse.json(
           { 
             error: "API Configuration Error",
@@ -67,7 +75,7 @@ export async function POST(request: NextRequest) {
       
       try {
         const result = await generateMockData(prompt, rowCount)
-        clearTimeout(timeoutId)
+        if (timeoutId) clearTimeout(timeoutId)
         return NextResponse.json({ 
           success: true,
           data: result.data,
@@ -76,7 +84,7 @@ export async function POST(request: NextRequest) {
           rowCount: result.data.length
         }, { headers: corsHeaders })
       } catch (error) {
-        clearTimeout(timeoutId)
+        if (timeoutId) clearTimeout(timeoutId)
         console.error("[API] Error generating mock data:", error)
         
         const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
@@ -97,7 +105,7 @@ export async function POST(request: NextRequest) {
     } else {
       try {
         const result = await fetchRealData(prompt, rowCount)
-        clearTimeout(timeoutId)
+        if (timeoutId) clearTimeout(timeoutId)
         return NextResponse.json({
           success: true,
           data: result.data,
@@ -105,7 +113,7 @@ export async function POST(request: NextRequest) {
           rowCount: result.data?.length || 0
         }, { headers: corsHeaders })
       } catch (error) {
-        clearTimeout(timeoutId)
+        if (timeoutId) clearTimeout(timeoutId)
         console.error("[API] Error fetching real data:", error)
         return NextResponse.json(
           {
@@ -119,7 +127,7 @@ export async function POST(request: NextRequest) {
       }
     }
   } catch (error) {
-    clearTimeout(timeoutId)
+    if (timeoutId) clearTimeout(timeoutId)
     console.error("[API] Error in generate-data API:", error)
     
     // Handle JSON parsing errors specifically

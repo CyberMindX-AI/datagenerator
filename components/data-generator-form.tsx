@@ -22,6 +22,7 @@ export function DataGeneratorForm() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedData, setGeneratedData] = useState<any[] | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState("")
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -31,6 +32,13 @@ export function DataGeneratorForm() {
 
     setIsGenerating(true)
     setShowPreview(false)
+    setGenerationProgress("")
+    
+    // Show progress message for larger requests
+    const rowCount = parseInt(rows)
+    if (rowCount > 15) {
+      setGenerationProgress(`Processing ${rowCount} rows in batches...`)
+    }
 
     try {
       const response = await fetch("/api/generate-data", {
@@ -90,6 +98,7 @@ export function DataGeneratorForm() {
       }
     } finally {
       setIsGenerating(false)
+      setGenerationProgress("")
     }
   }
 
@@ -217,7 +226,7 @@ export function DataGeneratorForm() {
               {isGenerating ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating...
+                  {generationProgress || "Generating..."}
                 </>
               ) : (
                 <>
